@@ -1,0 +1,26 @@
+{
+    "name": "gollumeo/php-oop",
+    "description": "A legacy PHP (>= 8.2) OOP boilerplate",
+    "version": "1.0.0",
+    "autoload": {
+        "psr-4": {
+            "app\\": "app/"
+        }
+    },
+    "scripts": {
+        "post-root-package-install": [
+            "app\\Commands\\SetupCommand::launch"
+        ]
+    },
+    "require": {
+        "bramus/router": "^1.6",
+        "vlucas/phpdotenv": "^5.6",
+        "filp/whoops": "^2.15",
+        "ext-pdo": "*",
+        "symfony/console": "^6.0"
+    },
+    "require-dev": {
+        "symfony/var-dumper": "^6.2",
+        "phpunit/phpunit": "^10.1"
+    }
+}
