@@ -11,14 +11,18 @@ use ReflectionProperty;
 abstract class Model
 {
     protected static PDO $pdo;
-    protected string $table;
+    protected static string $table;
 
     public function __construct()
     {
-        if (!isset(self::$pdo)) {
-            self::initializeDatabase();
-        }
+        static::getPDO();
+    }
 
+    private static function getPDO(): void
+    {
+        if (!isset(static::$pdo)) {
+            static::initializeDatabase();
+        }
     }
 
     private static function initializeDatabase(): void
@@ -29,100 +33,110 @@ abstract class Model
         $password = $_ENV['DB_PASSWORD'];
 
         try {
-            self::$pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
-            self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            static::$pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+            static::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         } catch (PDOException $e) {
             echo "Connection failed: " . $e->getMessage();
+            exit; // Si la connexion échoue, on sort pour éviter des comportements inattendus
         }
     }
 
     public function find(int $id): array
     {
-        $statement = self::$pdo->prepare("SELECT * FROM {$this->table} WHERE id = :id");
+        static::getPDO();
+        $statement = static::$pdo->prepare("SELECT * FROM " . static::$table . " WHERE id = :id");
         $statement->execute(['id' => $id]);
-        return $statement->fetch(PDO::FETCH_ASSOC);
+        return $statement->fetch(PDO::FETCH_ASSOC) ? : [];
     }
 
     public function findAll(): array
     {
-        $statement = self::$pdo->prepare("SELECT * FROM {$this->table}");
+        static::getPDO();
+        $statement = static::$pdo->prepare("SELECT * FROM " . static::$table);
         $statement->execute();
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
+        return $statement->fetchAll(PDO::FETCH_ASSOC) ? : [];
     }
 
     public function update(int $id, array $data): void
     {
+        static::getPDO();
         $this->validateRequiredFields($data, array_keys($data));
 
-        $fields = '';
-        foreach (array_keys($data) as $key) {
-            $fields .= $key . ' = :' . $key . ', ';
-        }
-        $fields = rtrim($fields, ', ');
+        $fields = implode(', ', array_map(fn ($key) => "$key = :$key", array_keys($data)));
 
-        $statement = self::$pdo->prepare("UPDATE {$this->table} SET $fields WHERE id = :id");
+        $statement = static::$pdo->prepare("UPDATE " . static::$table . " SET $fields WHERE id = :id");
         $statement->execute(array_merge(['id' => $id], $data));
     }
 
     public function updateBy(string $column, array $data): void
     {
+        static::getPDO();
         $this->validateRequiredFields($data, array_keys($data));
 
-        $fields = '';
-        foreach (array_keys($data) as $key) {
-            $fields .= $key . ' = :' . $key . ', ';
-        }
-        $fields = rtrim($fields, ', ');
+        $fields = implode(', ', array_map(fn ($key) => "$key = :$key", array_keys($data)));
 
-        $statement = self::$pdo->prepare("UPDATE {$this->table} SET $fields WHERE $column = :$column");
+        $statement = static::$pdo->prepare("UPDATE " . static::$table . " SET $fields WHERE $column = :$column");
         $statement->execute($data);
     }
 
-    public function create(): void
+    public static function create(array $data): Model
     {
-        $this->validateRequiredFields($this->getModelAttributes(), array_keys($this->getModelAttributes()));
+        static::getPDO();
+        static::validateRequiredFields($data, array_keys($data));
 
-        $fields = '';
-        $placeholders = '';
-        foreach ($this->getModelAttributes() as $key => $value) {
-            $fields .= $key . ', ';
-            $placeholders .= ':' . $key . ', ';
-        }
-        $fields = rtrim($fields, ', ');
-        $placeholders = rtrim($placeholders, ', ');
+        $fields = implode(', ', array_keys($data));
+        $placeholders = implode(', ', array_map(fn ($key) => ":$key", array_keys($data)));
 
-        $statement = self::$pdo->prepare("INSERT INTO {$this->table} ($fields) VALUES ($placeholders)");
-        $statement->execute($this->getModelAttributes());
+        $statement = static::$pdo->prepare("INSERT INTO " . static::$table . " ($fields) VALUES ($placeholders)");
+        $statement->execute($data);
+
+        $id = static::$pdo->lastInsertId();
+        return static::getCreatedInstance($id);
     }
 
     public function delete(int $id): void
     {
-        $statement = self::$pdo->prepare("DELETE FROM {$this->table} WHERE id = :id");
+        static::getPDO();
+        $statement = static::$pdo->prepare("DELETE FROM " . static::$table . " WHERE id = :id");
         $statement->execute(['id' => $id]);
     }
 
-    protected function getModelAttributes(): array
+    protected static function getModelAttributes(): array
     {
-        $reflector = new ReflectionClass($this);
+        $reflector = new ReflectionClass(new static);
         $properties = $reflector->getProperties(ReflectionProperty::IS_PROTECTED);
 
         $attributes = [];
         foreach ($properties as $property) {
             $propertyName = $property->getName();
-            if ($propertyName !== 'table') {
-                $attributes[$propertyName] = $this->$propertyName;
+            if ($propertyName !== 'table' && isset(static::$$propertyName)) {
+                $attributes[$propertyName] = static::$$propertyName;
             }
         }
 
         return $attributes;
     }
 
-    protected function validateRequiredFields(array $data, array $requiredFields): void
+    protected static function validateRequiredFields(array $data, array $requiredFields): void
     {
         foreach ($requiredFields as $field) {
             if (empty($data[$field])) {
                 throw new InvalidArgumentException("Missing required field: $field");
             }
         }
+    }
+
+    private static function getCreatedInstance(int $id): Model
+    {
+        $instance = new static();
+        $data = $instance->find($id);
+
+        if ($data) {
+            foreach ($data as $key => $value) {
+                $instance->$key = $value;
+            }
+        }
+
+        return $instance;
     }
 }

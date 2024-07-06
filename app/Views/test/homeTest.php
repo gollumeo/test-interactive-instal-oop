@@ -1,0 +1,1 @@
+<h2 class="text-red-500">coucou from test</h2>

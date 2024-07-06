@@ -21,6 +21,11 @@
     },
     "require-dev": {
         "symfony/var-dumper": "^6.2",
-        "phpunit/phpunit": "^10.1"
+        "pestphp/pest": "^2.34"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
     }
 }

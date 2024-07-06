@@ -8,8 +8,9 @@ class View
     protected string $footer = 'partials/footer.php';
     protected string $title;
 
-    public function render(string $view, array $data = []): void
+    public function render(string $view, array $data = [], $title = null): void
     {
+        $this->title = $title ?? null;
         $data['title'] = $this->title ?? null;
         extract($data);
 
