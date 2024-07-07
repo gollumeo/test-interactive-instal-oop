@@ -2,6 +2,8 @@
 
 namespace app\Models;
 
+use DateTime;
+use Exception;
 use InvalidArgumentException;
 use PDO;
 use PDOException;
@@ -13,11 +15,17 @@ abstract class Model
     protected static PDO $pdo;
     protected static string $table;
 
+    /**
+     * @throws Exception
+     */
     public function __construct()
     {
         static::getPDO();
     }
 
+    /**
+     * @throws Exception
+     */
     private static function getPDO(): void
     {
         if (!isset(static::$pdo)) {
@@ -25,6 +33,9 @@ abstract class Model
         }
     }
 
+    /**
+     * @throws Exception
+     */
     private static function initializeDatabase(): void
     {
         $host = $_ENV['DB_HOST'];
@@ -36,20 +47,37 @@ abstract class Model
             static::$pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
             static::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         } catch (PDOException $e) {
-            echo "Connection failed: " . $e->getMessage();
-            exit; // Si la connexion échoue, on sort pour éviter des comportements inattendus
+            throw new Exception("Connection failed: " . $e->getMessage());
         }
     }
 
-    public function find(int $id): array
+    /**
+     * @throws Exception
+     */
+    public static function find(int $id): ?static
     {
         static::getPDO();
         $statement = static::$pdo->prepare("SELECT * FROM " . static::$table . " WHERE id = :id");
-        $statement->execute(['id' => $id]);
-        return $statement->fetch(PDO::FETCH_ASSOC) ? : [];
+        $statement->bindParam(':id', $id, PDO::PARAM_INT);
+        $statement->setFetchMode(PDO::FETCH_CLASS, static::class);
+        $statement->execute();
+        $result = $statement->fetch();
+
+        if ($result && property_exists($result, 'last_updated')) {
+            $result->last_updated = new DateTime($result->last_updated);
+        }
+
+        if ($result === false) {
+            return null;
+        }
+
+        return $result;
     }
 
-    public function findAll(): array
+    /**
+     * @throws Exception
+     */
+    public static function findAll(): array
     {
         static::getPDO();
         $statement = static::$pdo->prepare("SELECT * FROM " . static::$table);
@@ -57,21 +85,29 @@ abstract class Model
         return $statement->fetchAll(PDO::FETCH_ASSOC) ? : [];
     }
 
-    public function update(int $id, array $data): void
+    /**
+     * @throws Exception
+     */
+    public static function update(int $id, array $data)
     {
         static::getPDO();
-        $this->validateRequiredFields($data, array_keys($data));
+        self::validateRequiredFields($data, array_keys($data));
 
         $fields = implode(', ', array_map(fn ($key) => "$key = :$key", array_keys($data)));
 
         $statement = static::$pdo->prepare("UPDATE " . static::$table . " SET $fields WHERE id = :id");
         $statement->execute(array_merge(['id' => $id], $data));
+
+        return self::getCreatedInstance($id);
     }
 
-    public function updateBy(string $column, array $data): void
+    /**
+     * @throws Exception
+     */
+    public static function updateBy(string $column, array $data): void
     {
         static::getPDO();
-        $this->validateRequiredFields($data, array_keys($data));
+        self::validateRequiredFields($data, array_keys($data));
 
         $fields = implode(', ', array_map(fn ($key) => "$key = :$key", array_keys($data)));
 
@@ -79,6 +115,9 @@ abstract class Model
         $statement->execute($data);
     }
 
+    /**
+     * @throws Exception
+     */
     public static function create(array $data): Model
     {
         static::getPDO();
@@ -94,7 +133,10 @@ abstract class Model
         return static::getCreatedInstance($id);
     }
 
-    public function delete(int $id): void
+    /**
+     * @throws Exception
+     */
+    public static function delete(int $id): void
     {
         static::getPDO();
         $statement = static::$pdo->prepare("DELETE FROM " . static::$table . " WHERE id = :id");
@@ -126,6 +168,9 @@ abstract class Model
         }
     }
 
+    /**
+     * @throws Exception
+     */
     private static function getCreatedInstance(int $id): Model
     {
         $instance = new static();
@@ -133,7 +178,11 @@ abstract class Model
 
         if ($data) {
             foreach ($data as $key => $value) {
-                $instance->$key = $value;
+                if ($key === 'last_updated') {
+                    $instance->$key = $value->format('Y-m-d H:i:s');
+                } else {
+                    $instance->$key = $value;
+                }
             }
         }
 

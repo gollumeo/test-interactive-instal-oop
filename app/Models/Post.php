@@ -11,5 +11,5 @@ class Post extends Model
     public string $author;
     public string $title;
     public string $body;
-    public DateTime $last_updated;
+    public string|DateTime $last_updated;
 }
